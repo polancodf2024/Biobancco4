@@ -156,6 +156,7 @@ if submit_button:
         st.session_state.identificacion = generar_identificacion(prefijo)
 
     responses['Identificación de la muestra'] = st.session_state.identificacion
+    st.write("Identificación de la muestra generada:", st.session_state.identificacion)
 
     if not num_registro.isdigit():
         st.error('El número de expediente debe ser un valor numérico entre 6 y 10 dígitos.')
