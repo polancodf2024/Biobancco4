@@ -1,9 +1,10 @@
+import os
 import sqlite3
 import streamlit as st
 import pandas as pd
-import os
 from datetime import datetime
 from filelock import FileLock
+
 
 # Conectar a la base de datos SQLite
 conn = sqlite3.connect('identificaciones.db')
@@ -25,21 +26,13 @@ def generar_identificacion(prefijo):
     identificacion = f"{prefijo}{nuevo_id:06d}"
     return identificacion
 
+
 # Mostrar el logo
 st.image("escudo_COLOR.jpg", width=100)
 
 # Archivo Excel donde se acumularán todas las respuestas
 acumulado_excel_file = 'respuestas_cuestionario_acumulado.xlsx'
 lock_file = 'acumulado_excel_file.lock'
-
-# Lista de estados de la República Mexicana
-estados_mexico = [
-    'Otro', 'Aguascalientes', 'Baja California', 'Baja California Sur', 'Campeche', 'Chiapas', 'Chihuahua', 
-    'Ciudad de Mexico', 'Coahuila', 'Colima', 'Durango', 'Estado de Mexico', 'Guanajuato', 'Guerrero', 
-    'Hidalgo', 'Jalisco', 'Michoacan', 'Morelos', 'Nayarit', 'Nuevo Leon', 'Oaxaca', 'Puebla', 'Queretaro', 
-    'Quintana Roo', 'San Luis Potosi', 'Sinaloa', 'Sonora', 'Tabasco', 'Tamaulipas', 'Tlaxcala', 'Veracruz', 
-    'Yucatan', 'Zacatecas'
-]
 
 # Crear un diccionario para almacenar las respuestas
 responses = {}
@@ -52,10 +45,29 @@ with st.form(key='cuestionario_form'):
     fecha_entrevista = st.date_input('Fecha de entrevista', value=datetime.now())
     responses['Fecha de entrevista'] = fecha_entrevista.strftime('%d/%m/%Y')
 
+    # Inicio con las preguntas de peso, estatura y otros datos biométricos
+    peso = st.number_input('Peso (Kg)', min_value=35.0, max_value=150.0, step=0.1, format="%.1f")
+    responses['Peso (Kg)'] = peso
+
+    estatura = st.number_input('Estatura (m)', min_value=1.20, max_value=2.00, step=0.01, format="%.2f")
+    responses['Estatura (m)'] = estatura
+
+    if estatura > 0:
+        imc = round(peso / (estatura ** 2), 1)
+    else:
+        imc = 0.0
+    responses['Índice de masa corporal (IMC)'] = imc
+
+    responses['Circunferencia de cintura (cm)'] = st.number_input('Circunferencia de cintura (cm)', min_value=50.0, max_value=150.0, step=0.1, format="%.1f")
+    responses['Tensión arterial Sistólica (mmHg)'] = st.number_input('Tensión arterial Sistólica (mmHg)', min_value=50, max_value=220, step=1)
+    responses['Tensión arterial Diastólica (mmHg)'] = st.number_input('Tensión arterial Diastólica (mmHg)', min_value=40, max_value=130, step=1)
+    responses['Frecuencia cardiaca (lpm)'] = st.number_input('Frecuencia cardiaca (lpm)', min_value=40, max_value=120, step=1)
+
+    # Continuación del cuestionario
     responses['Procedencia del paciente'] = st.selectbox(
         'Procedencia del paciente', 
         ['Consulta externa lado A', 'Consulta externa lado B', 'Clínica Arritmias', 'Clínica Coagulación', 
-         'Clínica Valvulares', 'Clínica Hipertensión', 'Donador Control']
+         'Clínica Valvulares', 'Clínica Hipertensión', 'Clínica Insuficiencia Cardiaca', 'Donador Control']
     )
 
     num_registro = st.text_input('Núm. registro INCICh')
@@ -75,59 +87,49 @@ with st.form(key='cuestionario_form'):
 
     responses['Género'] = st.selectbox('Género', ['Masculino', 'Femenino', 'Otro'])
 
-    peso = st.number_input('Peso (Kg)', min_value=35.0, max_value=150.0, step=0.1, format="%.1f")
-    responses['Peso (Kg)'] = peso
+    # Nueva sección de enfermedades familiares
+    st.text("¿Tuvo o tiene familiar(es) con alguna de las siguientes enfermedades?")
+    enfermedades = [
+        'Cardiopatía congénita', 'Angina', 'Valvulopatía', 'Cardiopatía pulmonar',
+        'Arritmia cardiaca', 'Coágulos sanguíneos', 'Hipertensión', 'Dislipidemia',
+        'Diabetes', 'Insuficiencia cardíaca'
+    ]
+    familiares = ['Madre', 'Padre', 'Ambos', 'Hermano(a)', 'Ninguno']
 
-    estatura = st.number_input('Estatura (m)', min_value=1.20, max_value=2.00, step=0.01, format="%.2f")
-    responses['Estatura (m)'] = estatura
+    # Diccionario para almacenar respuestas
+    enfermedades_respuestas = {enfermedad: {familiar: False for familiar in familiares} for enfermedad in enfermedades}
 
-    if estatura > 0:
-        imc = round(peso / (estatura ** 2), 1)
-    else:
-        imc = 0.0
-    responses['Índice de masa corporal (IMC)'] = imc
+    for enfermedad in enfermedades:
+        st.write(f"**{enfermedad}**")
+        cols = st.columns(len(familiares))
+        for idx, familiar in enumerate(familiares):
+            enfermedades_respuestas[enfermedad][familiar] = cols[idx].checkbox(familiar, key=f"{enfermedad}_{familiar}")
 
-    responses['Circunferencia de cintura (cm)'] = st.number_input('Circunferencia de cintura (cm)', min_value=50.0, max_value=150.0, step=0.1, format="%.1f")
-    responses['Tensión arterial Sistólica (mmHg)'] = st.number_input('Tensión arterial Sistólica (mmHg)', min_value=50, max_value=220, step=1)
-    responses['Tensión arterial Diastólica (mmHg)'] = st.number_input('Tensión arterial Diastólica (mmHg)', min_value=40, max_value=130, step=1)
-    responses['Frecuencia cardiaca (lpm)'] = st.number_input('Frecuencia cardiaca (lpm)', min_value=40, max_value=120, step=1)
+    responses['Familiares con enfermedades específicas'] = enfermedades_respuestas
 
-    responses['Grupo étnico al que pertenece.'] = st.selectbox('Grupo étnico al que pertenece.', ['Otro', 'Mestizo', 'Pueblo indígena', 'Caucásico', 'Afrodescendiente'])
-    responses['¿Dónde nació su abuelo materno?'] = st.selectbox('¿Dónde nació su abuelo materno?', estados_mexico)
-    responses['¿Dónde nació su abuela materna?'] = st.selectbox('¿Dónde nació su abuela materna?', estados_mexico)
-    responses['¿Dónde nació su abuelo paterno?'] = st.selectbox('¿Dónde nació su abuelo paterno?', estados_mexico)
-    responses['¿Dónde nació su abuela paterna?'] = st.selectbox('¿Dónde nació su abuela paterna?', estados_mexico)
-    responses['¿Dónde nació su padre?'] = st.selectbox('¿Dónde nació su padre?', estados_mexico)
-    responses['¿Dónde nació su madre?'] = st.selectbox('¿Dónde nació su madre?', estados_mexico)
-    responses['¿Dónde nació usted?'] = st.selectbox('¿Dónde nació usted?', estados_mexico)
-    
-    responses['¿Tuvo o tiene familiar con alguna de las siguientes enfermedades?'] = st.selectbox(
-        '¿Tuvo o tiene familiar con alguna de las siguientes enfermedades?', 
-        ['Ninguna', 'Angina inestable', 'Angina estable', 'Cardiopatía congénita', 'Valvulopatía', 
-         'Cardiopatía pulmonar', 'Arritmia cardiaca', 'Coágulos sanguíneos', 'Hipertensión sistémica', 
-         'Dislipidemia', 'Diabetes', 'Hiperuricemia', 'Tabaquismo', 'Sobrepeso', 'Cardiopatía Isquémica']
-    )
-    
-    responses['¿Quién?'] = st.selectbox('¿Quién?', ['Madre', 'Padre', 'Ambos', 'Hermano(a)', 'Ninguno'])
-    responses['¿Fuma actualmente?'] = st.selectbox('¿Fuma actualmente?', ['Sí', 'No', 'No sabe'])
-    responses['En los últimos 3 meses ¿ha consumido alguna bebida que contenga alcohol?'] = st.selectbox(
-        'En los últimos 3 meses ¿ha consumido alguna bebida que contenga alcohol?', ['Sí', 'No', 'No sabe']
-    )
+    # Nueva sección para preguntas con opciones únicas
+    st.text("Complete las siguientes preguntas:")
+    preguntas = [
+        "¿Fuma usted actualmente?",
+        "¿En los últimos 3 meses ha tomado alcohol?",
+        "¿Tiene exceso de peso?",
+        "¿Tiene diabetes?",
+        "¿Le han indicado medicamento para la diabetes?",
+        "¿Tiene dislipidemia?",
+        "¿Le han indicado medicamento para la dislipidemia?",
+        "¿Tiene hipertensión?"
+    ]
 
-    responses['¿El paciente tiene exceso de peso?'] = 'Sí' if imc > 25 else 'No'
-    responses['¿El paciente tiene diabetes?'] = st.selectbox('¿El paciente tiene diabetes?', ['Sí', 'No', 'No sabe'])
-    responses['¿Le han indicado medicamento(s) para controlar su diabetes?'] = st.selectbox(
-        '¿Le han indicado medicamento(s) para controlar su diabetes?', ['Sí', 'No', 'No sabe']
-    )
+    opciones = ['Sí', 'No', 'No sabe']
 
-    responses['¿El paciente tiene dislipidemia?'] = st.selectbox('¿El paciente tiene dislipidemia?', ['Sí', 'No', 'No sabe'])
-    responses['¿Toma usted algún medicamento para los lípidos?'] = st.selectbox(
-        '¿Toma usted algún medicamento para los lípidos?', ['Sí', 'No', 'No sabe'], key='medicamento_lipicos'
-    )
-    responses['¿El paciente tiene hipertensión arterial?'] = st.selectbox('¿El paciente tiene hipertensión arterial?', ['Sí', 'No', 'No sabe'])
-    responses['¿Le han indicado medicamentos para controlar la presión?'] = st.selectbox(
-        '¿Le han indicado medicamentos para controlar la presión?', ['Sí', 'No', 'No sabe'], key='medicamentos_presion'
-    )
+    # Diccionario para almacenar respuestas de esta sección
+    preguntas_respuestas = {}
+    for pregunta in preguntas:
+        preguntas_respuestas[pregunta] = st.radio(pregunta, opciones, key=pregunta)
+
+    responses['Preguntas adicionales'] = preguntas_respuestas
+
+    # Preguntas adicionales proporcionadas
     responses['¿El paciente firmó el consentimiento informado para participar como donador del Biobanco del INCICh?'] = st.selectbox(
         '¿Firmó el paciente el consentimiento informado?', ['Sí', 'No'], key='firma_consentimiento'
     )
@@ -137,7 +139,6 @@ with st.form(key='cuestionario_form'):
     else:
         prefijo = st.selectbox('Si "Procedencia del Paciente = Donador Control", implica que "Identificación de la muestra = CB"', ['PB', 'CB'])
 
-    # Pregunta para el número de WhatsApp
     whatsapp = st.text_input('Proporcione el WhatsApp del donante:')
     if not whatsapp.isdigit() or len(whatsapp) != 10:
         st.error('El número de WhatsApp debe contener exactamente 10 dígitos.')
