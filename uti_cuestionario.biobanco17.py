@@ -9,14 +9,16 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 
-# Configuración del archivo remoto
+# Configuración de los archivos remotos
 REMOTE_HOST = "187.217.52.137"
 REMOTE_USER = "POLANCO6"
 REMOTE_PASSWORD = "tt6plco6"
 REMOTE_PORT = 3792
 REMOTE_DIR = "/home/POLANCO6"
-REMOTE_FILE = "respuestas_cuestionario_acumulado.xlsx"
-LOCAL_FILE = "respuestas_cuestionario_acumulado.xlsx"
+REMOTE_FILE_XLSX = "respuestas_cuestionario_acumulado.xlsx"
+REMOTE_FILE_CSV = "identificaciones.csv"
+LOCAL_FILE_XLSX = "respuestas_cuestionario_acumulado.xlsx"
+LOCAL_FILE_CSV = "identificaciones.csv"
 
 # Configuración de correo
 SMTP_SERVER = "smtp.gmail.com"
@@ -25,34 +27,34 @@ EMAIL_USER = "abcdf2024dfabc@gmail.com"
 EMAIL_PASSWORD = "hjdd gqaw vvpj hbsy"
 NOTIFICATION_EMAIL = "polanco@unam.mx"
 
-# Función para descargar el archivo del servidor remoto
-def recibir_archivo_remoto():
+# Función para descargar archivos del servidor remoto
+def recibir_archivo_remoto(remote_file, local_file):
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(REMOTE_HOST, port=REMOTE_PORT, username=REMOTE_USER, password=REMOTE_PASSWORD)
         sftp = ssh.open_sftp()
-        sftp.get(f"{REMOTE_DIR}/{REMOTE_FILE}", LOCAL_FILE)
+        sftp.get(f"{REMOTE_DIR}/{remote_file}", local_file)
         sftp.close()
         ssh.close()
-        print("Sincronización automática exitosa.")
+        st.info(f"Archivo {local_file} descargado del servidor remoto.")
     except Exception as e:
-        st.error("Error al descargar el archivo del servidor remoto.")
+        st.error(f"Error al descargar el archivo {remote_file} del servidor remoto.")
         st.error(str(e))
 
-# Función para subir el archivo al servidor remoto
-def enviar_archivo_remoto():
+# Función para subir archivos al servidor remoto
+def enviar_archivo_remoto(local_file, remote_file):
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(REMOTE_HOST, port=REMOTE_PORT, username=REMOTE_USER, password=REMOTE_PASSWORD)
         sftp = ssh.open_sftp()
-        sftp.put(LOCAL_FILE, f"{REMOTE_DIR}/{REMOTE_FILE}")
+        sftp.put(local_file, f"{REMOTE_DIR}/{remote_file}")
         sftp.close()
         ssh.close()
-        st.success("Archivo subido al servidor remoto.")
+        st.success(f"Archivo {local_file} subido al servidor remoto.")
     except Exception as e:
-        st.error("Error al subir el archivo al servidor remoto.")
+        st.error(f"Error al subir el archivo {local_file} al servidor remoto.")
         st.error(str(e))
 
 # Función para enviar correos con archivo adjunto
@@ -79,14 +81,6 @@ def send_email_with_attachment(email_recipient, subject, body, attachment_path):
         server.login(EMAIL_USER, EMAIL_PASSWORD)
         server.sendmail(EMAIL_USER, email_recipient, mensaje.as_string())
 
-# Sincronización automática al iniciar
-try:
-    st.info("Sincronizando archivo con el servidor remoto...")
-    recibir_archivo_remoto()
-except Exception as e:
-    st.warning("No se pudo sincronizar el archivo automáticamente.")
-    st.warning(str(e))
-
 # Solicitar contraseña al inicio
 PASSWORD = "tt5plco5"
 input_password = st.text_input("Ingresa la contraseña para acceder:", type="password")
@@ -94,45 +88,89 @@ if input_password != PASSWORD:
     st.error("Escribe la contraseña correcta, y presiona ENTER.")
     st.stop()
 
+# Sincronización automática al iniciar
+try:
+    st.info("Sincronizando archivos con el servidor remoto...")
+    recibir_archivo_remoto(REMOTE_FILE_XLSX, LOCAL_FILE_XLSX)
+    recibir_archivo_remoto(REMOTE_FILE_CSV, LOCAL_FILE_CSV)
+except Exception as e:
+    st.warning("No se pudo sincronizar los archivos automáticamente.")
+    st.warning(str(e))
+
 # Mostrar el logo y título
 st.image("escudo_COLOR.jpg", width=150)
-st.title("Subir el archivo: respuestas_cuestionario_acumulado.xlsx")
+st.title("Subir archivos: respuestas_cuestionario_acumulado.xlsx e identificaciones.csv")
 
-# Subida de archivo
-uploaded_xlsx = st.file_uploader("Selecciona el archivo para subir y reemplazar el existente", type=["xlsx"])
+# Subida de archivo XLSX
+uploaded_xlsx = st.file_uploader("Selecciona el archivo .xlsx para subir y reemplazar el existente", type=["xlsx"])
 if uploaded_xlsx is not None:
     try:
-        with open(LOCAL_FILE, "wb") as f:
+        with open(LOCAL_FILE_XLSX, "wb") as f:
             f.write(uploaded_xlsx.getbuffer())
 
         # Subir al servidor remoto
-        enviar_archivo_remoto()
+        enviar_archivo_remoto(LOCAL_FILE_XLSX, REMOTE_FILE_XLSX)
 
         # Enviar correos al administrador y usuario
         send_email_with_attachment(
             email_recipient=NOTIFICATION_EMAIL,
-            subject="Nuevo archivo subido al servidor",
-            body="Se ha subido un nuevo archivo al servidor.",
-            attachment_path=LOCAL_FILE
+            subject="Nuevo archivo XLSX subido al servidor",
+            body="Se ha subido un nuevo archivo XLSX al servidor.",
+            attachment_path=LOCAL_FILE_XLSX
         )
-        st.success("Archivo subido y correo enviado al administrador.")
+        st.success("Archivo XLSX subido y correo enviado al administrador.")
     except Exception as e:
-        st.error("Error al procesar el archivo.")
+        st.error("Error al procesar el archivo XLSX.")
+        st.error(str(e))
+
+# Subida de archivo CSV
+uploaded_csv = st.file_uploader("Selecciona el archivo .csv para subir y reemplazar el existente", type=["csv"])
+if uploaded_csv is not None:
+    try:
+        with open(LOCAL_FILE_CSV, "wb") as f:
+            f.write(uploaded_csv.getbuffer())
+
+        # Subir al servidor remoto
+        enviar_archivo_remoto(LOCAL_FILE_CSV, REMOTE_FILE_CSV)
+
+        # Enviar correos al administrador y usuario
+        send_email_with_attachment(
+            email_recipient=NOTIFICATION_EMAIL,
+            subject="Nuevo archivo CSV subido al servidor",
+            body="Se ha subido un nuevo archivo CSV al servidor.",
+            attachment_path=LOCAL_FILE_CSV
+        )
+        st.success("Archivo CSV subido y correo enviado al administrador.")
+    except Exception as e:
+        st.error("Error al procesar el archivo CSV.")
         st.error(str(e))
 
 # Título para la sección de descarga
-st.title("Descargar el archivo: respuestas_cuestionario_acumulado.xlsx")
+st.title("Descargar archivos: respuestas_cuestionario_acumulado.xlsx e identificaciones.csv")
 
-# Botón para descargar el archivo local
-if Path(LOCAL_FILE).exists():
-    with open(LOCAL_FILE, "rb") as file:
+# Botón para descargar el archivo XLSX
+if Path(LOCAL_FILE_XLSX).exists():
+    with open(LOCAL_FILE_XLSX, "rb") as file:
         st.download_button(
             label="Descargar respuestas_cuestionario_acumulado.xlsx",
             data=file,
             file_name="respuestas_cuestionario_acumulado.xlsx",
-            mime="text/xlsx"
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-    st.success("Archivo listo para descargar.")
+    st.success("Archivo XLSX listo para descargar.")
 else:
-    st.warning("El archivo local no existe. Sincroniza primero con el servidor.")
+    st.warning("El archivo XLSX local no existe. Sincroniza primero con el servidor.")
+
+# Botón para descargar el archivo CSV
+if Path(LOCAL_FILE_CSV).exists():
+    with open(LOCAL_FILE_CSV, "rb") as file:
+        st.download_button(
+            label="Descargar identificaciones.csv",
+            data=file,
+            file_name="identificaciones.csv",
+            mime="text/csv"
+        )
+    st.success("Archivo CSV listo para descargar.")
+else:
+    st.warning("El archivo CSV local no existe. Sincroniza primero con el servidor.")
 

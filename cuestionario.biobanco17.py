@@ -1,4 +1,4 @@
-import sqlite3
+import csv
 import paramiko
 import os
 import pandas as pd
@@ -13,7 +13,9 @@ REMOTE_PASSWORD = "tt6plco6"
 REMOTE_PORT = 3792
 REMOTE_DIR = "/home/POLANCO6"
 REMOTE_FILE_XLSX = "respuestas_cuestionario_acumulado.xlsx"
+REMOTE_FILE_CSV = "identificaciones.csv"
 LOCAL_FILE_XLSX = "respuestas_cuestionario_acumulado.xlsx"
+LOCAL_FILE_CSV = "identificaciones.csv"
 LOCK_FILE = "acumulado_excel_file.lock"
 
 # Conexión al servidor remoto
@@ -29,20 +31,20 @@ def connect_to_remote():
         return None, None
 
 # Descargar archivo remoto
-def download_file(sftp_client):
+def download_file(sftp_client, remote_file, local_file):
     try:
-        sftp_client.get(os.path.join(REMOTE_DIR, REMOTE_FILE_XLSX), LOCAL_FILE_XLSX)
-        st.info("Archivo descargado desde el servidor remoto.")
+        sftp_client.get(os.path.join(REMOTE_DIR, remote_file), local_file)
+        st.info(f"Archivo {local_file} descargado desde el servidor remoto.")
     except Exception as e:
-        st.error(f"Error al descargar archivo: {e}")
+        st.error(f"Error al descargar archivo {remote_file}: {e}")
 
 # Subir archivo remoto
-def upload_file(sftp_client):
+def upload_file(sftp_client, local_file, remote_file):
     try:
-        sftp_client.put(LOCAL_FILE_XLSX, os.path.join(REMOTE_DIR, REMOTE_FILE_XLSX))
-        st.success("Archivo subido exitosamente al servidor remoto.")
+        sftp_client.put(local_file, os.path.join(REMOTE_DIR, remote_file))
+        st.success(f"Archivo {local_file} subido exitosamente al servidor remoto.")
     except Exception as e:
-        st.error(f"Error al subir archivo: {e}")
+        st.error(f"Error al subir archivo {local_file}: {e}")
 
 # Cerrar conexión remota
 def close_connection(ssh_client, sftp_client):
@@ -52,27 +54,28 @@ def close_connection(ssh_client, sftp_client):
         ssh_client.close()
     st.info("Conexión cerrada exitosamente.")
 
+# Inicializar archivo CSV si no existe
+def initialize_csv():
+    if not os.path.exists(LOCAL_FILE_CSV):
+        with open(LOCAL_FILE_CSV, mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            writer.writerow(["id", "prefijo"])
 
-# Conectar a la base de datos SQLite
-conn = sqlite3.connect('identificaciones.db')
-cursor = conn.cursor()
-
-# Crear la tabla si no existe
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS identificaciones (
-        id INTEGER PRIMARY KEY,
-        prefijo TEXT NOT NULL
-    )
-''')
-
+# Generar identificación consecutiva
 def generar_identificacion(prefijo):
-    """Genera una nueva identificación consecutiva con el prefijo correspondiente."""
-    cursor.execute("INSERT INTO identificaciones (prefijo) VALUES (?)", (prefijo,))
-    conn.commit()
-    nuevo_id = cursor.lastrowid
+    initialize_csv()
+    with open(LOCAL_FILE_CSV, mode='r', newline='', encoding='utf-8') as file:
+        reader = csv.reader(file)
+        rows = list(reader)
+        last_id = int(rows[-1][0]) if len(rows) > 1 else 0
+    
+    nuevo_id = last_id + 1
+    with open(LOCAL_FILE_CSV, mode='a', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
+        writer.writerow([nuevo_id, prefijo])
+
     identificacion = f"{prefijo}{nuevo_id:06d}"
     return identificacion
-
 
 # Generar el cuestionario completo
 def generar_cuestionario():
@@ -80,7 +83,6 @@ def generar_cuestionario():
 
     responses = {}
     with st.form(key='cuestionario_form'):
-        # Preguntas iniciales ordenadas según imagen
         responses['Fecha de entrevista'] = st.date_input('Fecha de entrevista', value=datetime.now()).strftime('%d/%m/%Y')
         responses['Procedencia del paciente'] = st.selectbox(
             'Procedencia del paciente',
@@ -104,7 +106,6 @@ def generar_cuestionario():
 
         responses['Género'] = st.selectbox('Género', ['Masculino', 'Femenino', 'Otro'])
 
-        # Preguntas biométricas
         responses['Peso (Kg)'] = st.number_input('Peso (Kg)', min_value=35.0, max_value=150.0, step=0.1)
         responses['Estatura (m)'] = st.number_input('Estatura (m)', min_value=1.20, max_value=2.00, step=0.01)
 
@@ -114,7 +115,6 @@ def generar_cuestionario():
             imc = 0.0
         responses['Índice de masa corporal (IMC)'] = imc
 
-
         responses['Circunferencia de cintura (cm)'] = st.number_input('Circunferencia de cintura (cm)', min_value=50.0, max_value=150.0)
         responses['Tensión arterial Sistólica (mmHg)'] = st.number_input('Tensión arterial Sistólica (mmHg)', min_value=50, max_value=220)
         responses['Tensión arterial Diastólica (mmHg)'] = st.number_input('Tensión arterial Diastólica (mmHg)', min_value=40, max_value=130)
@@ -122,7 +122,6 @@ def generar_cuestionario():
 
         responses['Grupo étnico'] = st.selectbox('Grupo étnico', ['Indígena', 'Mestizo', 'Afrodescendiente', 'Otro'])
 
-        # Lugar de nacimiento
         st.text("¿Dónde nació usted y sus familiares?")
         estados_mexico = [
             'Otro', 'Aguascalientes', 'Baja California', 'Baja California Sur', 'Campeche', 'Chiapas', 'Chihuahua',
@@ -131,8 +130,6 @@ def generar_cuestionario():
             'Quintana Roo', 'San Luis Potosi', 'Sinaloa', 'Sonora', 'Tabasco', 'Tamaulipas', 'Tlaxcala', 'Veracruz',
             'Yucatan', 'Zacatecas'
         ]
-#        for familiar in ['abuelo materno', 'abuela materna', 'abuelo paterno', 'abuela paterna', 'padre', 'madre', 'usted']:
-#            responses[f"¿Dónde nació su {familiar}?"] = st.selectbox(f"¿Dónde nació su {familiar}?", estados_mexico)
 
         responses['¿Dónde nació su abuelo materno?'] = st.selectbox('¿Dónde nació su abuelo materno?', estados_mexico)
         responses['¿Dónde nació su abuela materna?'] = st.selectbox('¿Dónde nació su abuela materna?', estados_mexico)
@@ -142,7 +139,6 @@ def generar_cuestionario():
         responses['¿Dónde nació su madre?'] = st.selectbox('¿Dónde nació su madre?', estados_mexico)
         responses['¿Dónde nació usted?'] = st.selectbox('¿Dónde nació usted?', estados_mexico)
 
-        # Enfermedades familiares
         st.text("¿Tuvo o tiene familiar(es) con alguna de las siguientes enfermedades?")
         enfermedades = [
             'Cardiopatía congénita', 'Angina', 'Valvulopatía', 'Cardiopatía pulmonar',
@@ -159,7 +155,6 @@ def generar_cuestionario():
                 enfermedades_respuestas[enfermedad][familiar] = cols[idx].checkbox(familiar, key=f"{enfermedad}_{familiar}")
         responses['Familiares con enfermedades específicas'] = enfermedades_respuestas
 
-        # Preguntas adicionales
         st.text("Complete las siguientes preguntas:")
         preguntas = [
             "¿Fuma usted actualmente?",
@@ -193,11 +188,10 @@ def generar_cuestionario():
         if not whatsapp.isdigit() or len(whatsapp) != 10:
             st.error('El número de WhatsApp debe contener exactamente 10 dígitos.')
         else:
-            responses['WhatsApp'] = whatsapp
+            responses['WhatsApp'] = whatsapp            
 
         email = st.text_input('Proporcione el correo electrónico del donante:', value="No proporcionó email")
         responses['Correo electrónico'] = email
-
 
         submit_button = st.form_submit_button(label='Guardar Respuestas')
         cancel_button = st.form_submit_button(label='Salir sin Guardar')
@@ -209,33 +203,63 @@ def generar_cuestionario():
         responses['Identificación de la muestra'] = st.session_state.identificacion
         st.write("Identificación de la muestra generada:", st.session_state.identificacion)
         return responses
-    
+
     return None
 
 # Guardar respuestas localmente
+#def guardar_respuestas(responses):
+#    df_respuestas = pd.DataFrame([responses])
+#    with FileLock(LOCK_FILE):
+#        if os.path.exists(LOCAL_FILE_XLSX):
+#            df_existente = pd.read_excel(LOCAL_FILE_XLSX)
+#            df_final = pd.concat([df_existente, df_respuestas], ignore_index=True)
+#            df_final = df_final.loc[:, ~df_final.columns.duplicated(keep='first')]  # Eliminar columnas duplicadas
+#        else:
+#            df_final = df_respuestas
+#        df_final.to_excel(LOCAL_FILE_XLSX, index=False, engine='openpyxl')
+
 def guardar_respuestas(responses):
+    # Convertir la respuesta en un DataFrame
     df_respuestas = pd.DataFrame([responses])
+
     with FileLock(LOCK_FILE):
         if os.path.exists(LOCAL_FILE_XLSX):
+            # Leer el archivo existente
             df_existente = pd.read_excel(LOCAL_FILE_XLSX)
-            df_final = pd.concat([df_existente, df_respuestas], ignore_index=True)
-            df_final = df_final.loc[:, ~df_final.columns.duplicated(keep='first')]  # Eliminar columnas duplicadas
-        else:
-            df_final = df_respuestas
-        df_final.to_excel(LOCAL_FILE_XLSX, index=False, engine='openpyxl')
 
+            # Verificar si la columna 'ID' existe, si no, crearla
+            if 'ID' not in df_existente.columns:
+                df_existente['ID'] = range(1, len(df_existente) + 1)
+
+            # Asignar un nuevo ID a la nueva fila
+            nuevo_id = df_existente['ID'].max() + 1
+            df_respuestas['ID'] = nuevo_id
+
+            # Combinar los datos existentes con los nuevos
+            df_final = pd.concat([df_existente, df_respuestas], ignore_index=True)
+        else:
+            # Crear el archivo inicial con ID = 1
+            df_respuestas['ID'] = 1
+            df_final = df_respuestas
+
+    # Guardar el DataFrame en el archivo Excel
+    df_final.to_excel(LOCAL_FILE_XLSX, index=False, engine='openpyxl')
 
 
 # Función principal
 def main():
     ssh_client, sftp_client = connect_to_remote()
+    # Mostrar el logo y título
+    st.image("escudo_COLOR.jpg", width=150)
     if ssh_client and sftp_client:
         try:
-            download_file(sftp_client)
+            download_file(sftp_client, REMOTE_FILE_XLSX, LOCAL_FILE_XLSX)
+            download_file(sftp_client, REMOTE_FILE_CSV, LOCAL_FILE_CSV)
             responses = generar_cuestionario()
             if responses:
                 guardar_respuestas(responses)
-                upload_file(sftp_client)
+                upload_file(sftp_client, LOCAL_FILE_XLSX, REMOTE_FILE_XLSX)
+                upload_file(sftp_client, LOCAL_FILE_CSV, REMOTE_FILE_CSV)
         finally:
             close_connection(ssh_client, sftp_client)
     else:
